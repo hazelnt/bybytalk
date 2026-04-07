@@ -13,7 +13,7 @@ body{
   display:flex;
   height:100vh;
   background:#eef3fb;
-  overflow:hidden; /* 🔥 FIX biar ga ada scroll aneh */
+  overflow:hidden;
 }
 
 #sidebar{
@@ -48,9 +48,9 @@ body{
 }
 
 button{
-  padding:8px 12px;
+  padding:6px 10px;
   border:none;
-  border-radius:8px;
+  border-radius:6px;
   background:#1976d2;
   color:white;
   cursor:pointer;
@@ -66,7 +66,7 @@ button{
 #messages{
   flex:1;
   overflow-y:auto;
-  overflow-x:hidden; /* 🔥 FIX utama */
+  overflow-x:hidden;
   padding:15px;
 }
 
@@ -79,11 +79,12 @@ button{
   border-radius:14px;
   position:relative;
   word-wrap:break-word;
+  font-size: 13px;
 }
 
 .me .msg{
   background:#1976d2;
-  color:white;
+  color:rgb(6, 0, 0);
 }
 
 .other .msg{
@@ -106,14 +107,15 @@ button{
 
 .menu{
   position:absolute;
-  top:-5px;
-  right:-18px;
+  top:5px;
+  right:8px;
   cursor:pointer;
+  font-weight:bold;
 }
 
 .dropdown{
   position:absolute;
-  top:20px;
+  top:25px;
   right:0;
   background:white;
   border:1px solid #ddd;
@@ -123,10 +125,20 @@ button{
 }
 
 .dropdown div{
-  padding:6px 10px;
+  padding:8px;
   cursor:pointer;
 }
 .dropdown div:hover{background:#eee;}
+
+#replyPreview{
+  display:none;
+  padding:8px;
+  background:#f1f1f1;
+  border-left:4px solid #1976d2;
+  font-size:13px;
+  margin:5px 10px;
+  border-radius:8px;
+}
 
 #inputArea{
   display:flex;
@@ -157,7 +169,6 @@ button{
   bybytalk
   <div style="position:relative;">
     <button id="menuBtn" onclick="toggleMenu()">⋮</button>
-
     <div id="topMenu" style="display:none;position:absolute;right:0;top:35px;background:white;border:1px solid #ddd;border-radius:8px;">
       <div onclick="clearChat()">🗑 Clear Chat</div>
       <div onclick="logout()">🚪 Logout</div>
@@ -174,6 +185,12 @@ button{
 <div id="chat">
   <div id="messages"></div>
 
+  <!-- REPLY PREVIEW -->
+  <div id="replyPreview">
+    <span id="replyText"></span>
+    <button onclick="cancelReply()" style="float:right;">❌</button>
+  </div>
+
   <div id="inputArea">
     <input id="msg" placeholder="Type message">
     <button onclick="sendMsg()">Send</button>
@@ -181,6 +198,7 @@ button{
 </div>
 
 </div>
+<!-- SEMUA CODE KAMU SAMA, SCROLL KE BAGIAN JS -->
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -204,7 +222,7 @@ const msgInput = document.getElementById("msg");
 let stars = JSON.parse(localStorage.getItem("stars")||"[]");
 let replyTarget = null;
 
-/* ENTER SEND 🔥 */
+/* ENTER SEND */
 msgInput.addEventListener("keypress",(e)=>{
   if(e.key==="Enter") sendMsg();
 });
@@ -236,6 +254,8 @@ window.login = async ()=>{
     sidebarEl.style.display="block";
     menuBtnEl.style.display="inline-block";
     load();
+
+    updateStar(); // 🔥 TAMBAHAN
   }else alert("Wrong login");
 };
 
@@ -247,12 +267,12 @@ window.sendMsg = ()=>{
   push(ref(db,"chatroom"),{
     name:localStorage.getItem("user"),
     message:text,
-    reply:replyTarget,
+    reply: replyTarget || null,
     time:Date.now()
   });
 
   msgInput.value="";
-  replyTarget=null;
+  cancelReply();
 };
 
 /* LOAD */
@@ -270,10 +290,35 @@ function load(){
       const bubble=document.createElement("div");
       bubble.className="msg";
 
+      const menu=document.createElement("div");
+      menu.className="menu";
+      menu.innerText="⋮";
+
+      const drop=document.createElement("div");
+      drop.className="dropdown";
+
+      if(m.name===me){
+        drop.innerHTML=`
+          <div onclick="replyMsg('${m.message}')">↩ Reply</div>
+          <div onclick="star('${id}','${m.message}')">⭐ Star</div>
+          <div onclick="editMsg('${id}','${m.message}',${m.time})">✏️ Edit</div>
+          <div onclick="del('${id}')">🗑 Delete</div>
+        `;
+      }else{
+        drop.innerHTML=`
+        <div onclick="replyMsg('${m.message}')">↩ Reply</div>
+        <div onclick="star('${id}','${m.message}')">⭐ Star</div>
+        `;
+      }
+
+      menu.onclick=()=> drop.style.display = drop.style.display==="block"?"none":"block";
+
+      bubble.append(menu,drop);
+
       if(m.reply){
         const r=document.createElement("div");
         r.className="replyBox";
-        r.innerText=m.reply;
+        r.innerHTML = "<b>Reply:</b> " + m.reply;
         bubble.appendChild(r);
       }
 
@@ -295,8 +340,77 @@ function load(){
     if(isBottom){
       messagesEl.scrollTop = messagesEl.scrollHeight;
     }
+
+    updateStar();
   });
 }
+
+/* REPLY */
+window.replyMsg = (text)=>{
+  replyTarget = text;
+  document.getElementById("replyPreview").style.display = "block";
+  document.getElementById("replyText").innerText = text;
+};
+
+window.cancelReply = ()=>{
+  replyTarget = null;
+  document.getElementById("replyPreview").style.display = "none";
+};
+
+/* STAR */
+window.star=(id,text)=>{
+  if(!stars.find(s=>s.id===id)){
+    stars.push({id,text});
+    localStorage.setItem("stars",JSON.stringify(stars));
+    updateStar();
+  }
+};
+
+/* 🔥 FIX UTAMA ADA DI SINI */
+function updateStar(){
+  if(!starList) return;
+
+  stars = JSON.parse(localStorage.getItem("stars")||"[]"); // 🔥 TAMBAHAN
+
+  starList.innerHTML="";
+  stars.forEach((s,i)=>{
+    const d=document.createElement("div");
+    d.style.display="flex";
+    d.style.justifyContent="space-between";
+
+    const t=document.createElement("span");
+    t.innerText=s.text;
+
+    const b=document.createElement("button");
+    b.innerText="❌";
+    b.onclick=()=>{
+      stars.splice(i,1);
+      localStorage.setItem("stars",JSON.stringify(stars));
+      updateStar();
+    };
+
+    d.append(t,b);
+    starList.appendChild(d);
+  });
+}
+
+/* DELETE */
+window.del=async(id)=>{
+  const snap=await get(ref(db,"chatroom/"+id));
+  if(snap.val()?.name!==localStorage.getItem("user")){
+    alert("Tidak bisa hapus pesan orang lain");
+    return;
+  }
+  remove(ref(db,"chatroom/"+id));
+};
+
+/* EDIT */
+window.editMsg=(id,old,time)=>{
+  if(Date.now()-time>15*60*1000) return alert("Expired");
+  const n=prompt("Edit:",old);
+  if(!n) return;
+  update(ref(db,"chatroom/"+id),{message:n});
+};
 
 /* MENU */
 window.toggleMenu=()=>{
@@ -316,12 +430,13 @@ window.addEventListener("DOMContentLoaded", ()=>{
     sidebarEl.style.display="block";
     menuBtnEl.style.display="inline-block";
     load();
+
+    updateStar(); // 🔥 TAMBAHAN
   }else{
     sidebarEl.style.display="none";
     menuBtnEl.style.display="none";
   }
 });
 </script>
-
 </body>
 </html>
