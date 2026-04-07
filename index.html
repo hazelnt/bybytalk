@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>bybytalk</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+body{
+  margin:0;
+  font-family:'Inter',sans-serif;
+  display:flex;
+  height:100vh;
+  background:#eef3fb;
+}
+
+/* SIDEBAR */
+#sidebar{
+  width:240px;
+  background:#1565c0;
+  color:white;
+  padding:15px;
+}
+#sidebar h3{font-size:14px;opacity:0.8;}
+#starList{font-size:13px;}
+
+/* MAIN */
+#main{flex:1;display:flex;flex-direction:column;}
+
+/* HEADER */
+#header{
+  background:white;
+  padding:12px 16px;
+  border-bottom:1px solid #ddd;
+  display:flex;
+  justify-content:space-between;
+}
+
+/* LOGIN */
+#login{text-align:center;margin:auto;}
+#login input{
+  display:block;
+  margin:10px auto;
+  padding:10px;
+  border-radius:8px;
+  border:1px solid #ccc;
+}
+button{
+  padding:8px 12px;
+  border:none;
+  border-radius:8px;
+  background:#1976d2;
+  color:white;
+  cursor:pointer;
+}
+
+/* CHAT */
+#chat{display:none;flex:1;flex-direction:column;}
+
+#messages{
+  flex:1;
+  overflow-y:auto;
+  overflow-x:visible;
+  padding:15px;
+  position:relative;
+}
+
+/* ROW */
+.row{
+  display:flex;
+  margin:6px 0;
+  position:relative;
+  z-index:1;
+}
+.row.me{justify-content:flex-end;}
+
+/* BUBBLE */
+.msg{
+  max-width:360px;
+  padding:10px 14px;
+  border-radius:14px;
+  font-size:14px;
+  position:relative;
+  z-index:2;
+}
+
+.me .msg{
+  background:#1976d2;
+  color:white;
+  border-bottom-right-radius:4px;
+}
+
+.other .msg{
+  background:white;
+  border-bottom-left-radius:4px;
+  box-shadow:0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* USERNAME */
+.name{
+  font-size:11px;
+  opacity:0.6;
+  margin-bottom:3px;
+}
+
+/* MENU */
+.menu{
+  position:absolute;
+  top:-5px;
+  right:-18px;
+  font-size:13px;
+  cursor:pointer;
+  z-index:5;
+}
+
+/* DROPDOWN */
+.dropdown{
+  position:absolute;
+  top:20px;
+  right:0;
+  background:white;
+  border:1px solid #ddd;
+  border-radius:8px;
+  display:none;
+  font-size:13px;
+  z-index:9999;
+  box-shadow:0 5px 15px rgba(0,0,0,0.2);
+}
+.dropdown div{
+  padding:6px 10px;
+  cursor:pointer;
+}
+.dropdown div:hover{background:#eee;}
+
+/* INPUT */
+#inputArea{
+  display:flex;
+  padding:10px;
+  border-top:1px solid #ddd;
+  background:white;
+}
+#msg{
+  flex:1;
+  padding:10px;
+  border-radius:20px;
+  border:1px solid #ccc;
+}
+#header{
+  position:relative;
+  z-index:10000;
+}
+#topMenu{
+  display:none;
+  position:absolute;
+  right:0;
+  top:35px;
+  background:white;
+  border:1px solid #ddd;
+  border-radius:8px;
+  box-shadow:0 5px 15px rgba(0,0,0,0.2);
+  font-size:13px;
+  z-index:99999; /* INI KUNCI */
+}
+</style>
+</head>
+
+<body>
+
+<div id="sidebar">
+  <h3>⭐ Starred</h3>
+  <div id="starList"></div>
+</div>
+
+<div id="main">
+
+<div id="header">
+  bybytalk
+  <div style="position:relative;">
+    <button onclick="toggleMenu()">⋮</button>
+
+    <div id="topMenu" style="
+      display:none;
+      position:absolute;
+      right:0;
+      top:35px;
+      background:white;
+      border:1px solid #ddd;
+      border-radius:8px;
+      box-shadow:0 5px 15px rgba(0,0,0,0.2);
+      font-size:13px;
+    ">
+      <div onclick="clearChat()" style="padding:8px;cursor:pointer;">🗑 Clear Chat</div>
+      <div onclick="logout()" style="padding:8px;cursor:pointer;">🚪 Logout</div>
+    </div>
+  </div>
+</div>
+
+<div id="login">
+  <input id="username" placeholder="username">
+  <input id="password" type="password" placeholder="password">
+  <button onclick="login()">Login</button>
+</div>
+
+<div id="chat">
+  <div id="messages"></div>
+
+  <div id="inputArea">
+    <input id="msg" placeholder="Type message">
+    <button onclick="sendMsg()">Send</button>
+  </div>
+</div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+import { getDatabase, ref, push, onValue, get, remove, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+const app = initializeApp({
+  apiKey:"AIzaSyDWwa1l-DF4Z8wsznoSLtwGi3IWGAjuLTQ",
+  authDomain:"bybytalk.firebaseapp.com",
+  databaseURL:"https://bybytalk-default-rtdb.asia-southeast1.firebasedatabase.app"
+});
+
+const db = getDatabase(app);
+
+let stars = JSON.parse(localStorage.getItem("stars")||"[]");
+
+/* LOGIN */
+window.login = async ()=>{
+  const u = document.getElementById("username").value.trim().toLowerCase();
+  const p = document.getElementById("password").value.trim();
+
+  const snap = await get(ref(db,"users"));
+  const data = snap.val();
+
+  if(!data){
+    alert("No users in database");
+    return;
+  }
+
+  const ok = Object.values(data).some(user=>{
+    return user.username.toLowerCase() === u &&
+           user.password === p;
+  });
+
+  if(ok){
+    localStorage.setItem("user",u);
+    document.getElementById("login").style.display="none";
+    document.getElementById("chat").style.display="flex";
+    load();
+  } else {
+    alert("Wrong username/password");
+  }
+};
+
+/* SEND */
+window.sendMsg = ()=>{
+  const text = document.getElementById("msg").value;
+  if(!text) return;
+
+  push(ref(db,"chatroom"),{
+    name:localStorage.getItem("user"),
+    message:text,
+    time:Date.now()
+  });
+
+  document.getElementById("msg").value="";
+};
+
+/* ENTER */
+document.getElementById("msg").addEventListener("keypress",(e)=>{
+  if(e.key==="Enter") sendMsg();
+});
+
+/* LOAD */
+function load(){
+  onValue(ref(db,"chatroom"),snap=>{
+    const box = document.getElementById("messages");
+    box.innerHTML="";
+
+    const me = (localStorage.getItem("user") || "").toLowerCase();
+
+    Object.entries(snap.val()||{}).forEach(([id,m])=>{
+      const row = document.createElement("div");
+      row.className = "row " + (m.name.toLowerCase() === me ? "me" : "other");
+
+      const bubble = document.createElement("div");
+      bubble.className="msg";
+
+      if(m.name.toLowerCase() !== me){
+        const nameTag = document.createElement("div");
+        nameTag.className="name";
+        nameTag.innerText=m.name;
+        bubble.appendChild(nameTag);
+      }
+
+      const text = document.createElement("div");
+      text.innerText=m.message;
+      bubble.appendChild(text);
+
+      const menu = document.createElement("div");
+      menu.className="menu";
+      menu.innerText="⋮";
+
+      const drop = document.createElement("div");
+      drop.className="dropdown";
+
+if(m.name.toLowerCase() === me){
+  drop.innerHTML=`
+    <div onclick="star('${id}','${m.message}')">⭐ Star</div>
+    <div onclick="editMsg('${id}','${m.message}',${m.time})">✏️ Edit</div>
+    <div onclick="del('${id}')">🗑 Delete</div>
+  `;
+}else{
+  drop.innerHTML=`
+    <div onclick="star('${id}','${m.message}')">⭐ Star</div>
+  `;
+}
+
+      menu.onclick=()=>{
+        drop.style.display = drop.style.display==="block"?"none":"block";
+      };
+
+      bubble.append(menu,drop);
+      row.appendChild(bubble);
+      box.appendChild(row);
+    });
+
+    updateStar();
+  });
+}
+
+/* STAR */
+window.star = (id, text)=>{
+  if(!stars.find(s => s.id === id)){
+    stars.push({id, text});
+    localStorage.setItem("stars", JSON.stringify(stars));
+    updateStar();
+  }
+};
+
+
+function updateStar(){
+  starList.innerHTML="";
+
+  stars.forEach((s,i)=>{
+    const d=document.createElement("div");
+    d.style.display="flex";
+    d.style.justifyContent="space-between";
+
+    const text = document.createElement("span");
+    text.textContent = s.text;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.textContent = "❌";
+    removeBtn.style.marginLeft = "5px";
+
+    removeBtn.onclick = ()=>{
+      stars.splice(i,1);
+      localStorage.setItem("stars", JSON.stringify(stars));
+      updateStar();
+    };
+
+    d.append(text, removeBtn);
+    starList.appendChild(d);
+  });
+}
+/* DELETE */
+window.del = async (id)=>{
+  const snap = await get(ref(db,"chatroom/"+id));
+  const data = snap.val();
+
+  const me = localStorage.getItem("user");
+
+  if(!data || data.name !== me){
+    alert("Tidak bisa hapus pesan orang lain");
+    return;
+  }
+
+  remove(ref(db,"chatroom/"+id));
+
+  // hapus dari star
+  stars = stars.filter(s => s.id !== id);
+  localStorage.setItem("stars", JSON.stringify(stars));
+  updateStar();
+};
+/* CLEAR */
+window.menu = ()=>{
+  const choice = prompt(
+`Menu:
+1. Clear Chat
+2. Logout
+
+Ketik angka (1 / 2)`
+  );
+
+  if(choice === "1"){
+    if(confirm("Clear all chat?")){
+      remove(ref(db,"chatroom"));
+    }
+  }
+
+  else if(choice === "2"){
+    if(confirm("Logout?")){
+      localStorage.removeItem("user");
+      location.reload();
+    }
+  }
+};
+
+/* AUTO LOGIN */
+if(localStorage.getItem("user")){
+  document.getElementById("login").style.display="none";
+  document.getElementById("chat").style.display="flex";
+  load();
+}
+window.toggleMenu = ()=>{
+  const m = document.getElementById("topMenu");
+  m.style.display = m.style.display==="block" ? "none" : "block";
+};
+
+window.clearChat = ()=>{
+  if(confirm("Clear all chat?")){
+    remove(ref(db,"chatroom"));
+  }
+};
+
+window.logout = ()=>{
+  if(confirm("Logout?")){
+    localStorage.removeItem("user");
+    location.reload();
+  }
+};
+window.editMsg = (id, oldText, time)=>{
+  const now = Date.now();
+
+  // batas 15 menit
+  if(now - time > 15 * 60 * 1000){
+    alert("Edit time expired (15 min)");
+    return;
+  }
+
+  const newText = prompt("Edit message:", oldText);
+
+  if(!newText || newText.trim() === "") return;
+
+  update(ref(db,"chatroom/"+id),{
+    message:newText
+  });
+
+  // update star juga kalau ada
+  stars = stars.map(s=>{
+    if(s.id === id){
+      return {...s, text:newText};
+    }
+    return s;
+  });
+
+  localStorage.setItem("stars", JSON.stringify(stars));
+  updateStar();
+};
+</script>
+
+</body>
+</html>
