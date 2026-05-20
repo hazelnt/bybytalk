@@ -36,6 +36,9 @@ body{
   border-bottom:1px solid #ddd;
   display:flex;
   justify-content:space-between;
+  align-items:center;
+  position:relative;
+  z-index:1000; /* Keep header on top */
 }
 
 #login{text-align:center;margin:auto;}
@@ -61,6 +64,8 @@ button{
   flex:1;
   flex-direction:column;
   overflow:hidden;
+  position:relative;
+  z-index:1;
 }
 
 #messages{
@@ -68,7 +73,49 @@ button{
   overflow-y:auto;
   overflow-x:hidden;
   padding:15px;
+  position:relative;
+  z-index:1;
 }
+
+/* DAY STAMP */
+.dayStamp{
+  text-align:center;
+  font-size:12px;
+  color:#666;
+  margin:15px 0;
+  position:relative;
+}
+
+.dayStamp::before,
+.dayStamp::after{
+  content:"";
+  position:absolute;
+  top:50%;
+  width:35%;
+  height:1px;
+  background:#ddd;
+}
+
+.dayStamp::before{right:100%;margin-right:10px;}
+.dayStamp::after{left:100%;margin-left:10px;}
+
+/* SCROLL TO BOTTOM BUTTON */
+#scrollBtn{
+  position:absolute;
+  bottom:80px;
+  right:20px;
+  background:#1976d2;
+  color:white;
+  border-radius:20px;
+  padding:8px 16px;
+  cursor:pointer;
+  display:none;
+  box-shadow:0 2px 10px rgba(0,0,0,0.2);
+  font-size:13px;
+  z-index:100;
+}
+
+#scrollBtn:hover{background:#1565c0;}
 
 .row{display:flex;margin:6px 0;}
 .row.me{justify-content:flex-end;}
@@ -79,16 +126,17 @@ button{
   border-radius:14px;
   position:relative;
   word-wrap:break-word;
-  font-size: 13px;
+  font-size:13px;
 }
 
-.me .msg{
-  background:#1976d2;
-  color:rgb(6, 0, 0);
-}
+.me .msg{background:#1976d2;color:#000;}
+.other .msg{background:#fff;}
 
-.other .msg{
-  background:white;
+.timestamp{
+  font-size:10px;
+  opacity:0.6;
+  margin-top:5px;
+  text-align:right;
 }
 
 .replyBox{
@@ -111,6 +159,7 @@ button{
   right:8px;
   cursor:pointer;
   font-weight:bold;
+  z-index:10;
 }
 
 .dropdown{
@@ -121,13 +170,10 @@ button{
   border:1px solid #ddd;
   border-radius:8px;
   display:none;
-  z-index:1000;
+  z-index:2000; /* Higher z-index for message dropdowns */
 }
 
-.dropdown div{
-  padding:8px;
-  cursor:pointer;
-}
+.dropdown div{padding:8px;cursor:pointer;}
 .dropdown div:hover{background:#eee;}
 
 #replyPreview{
@@ -153,9 +199,40 @@ button{
   border-radius:20px;
   border:1px solid #ccc;
 }
+
+#searchDate{
+  padding:5px;
+  border-radius:4px;
+  border:1px solid #ccc;
+  font-family:'Inter',sans-serif;
+}
+
+/* TOP MENU - FIXED z-index */
+#menuBtn{
+  z-index:1001;
+}
+
+#topMenu{
+  z-index:2000 !important; /* Force highest z-index */
+  min-width:150px;
+  box-shadow:0 4px 15px rgba(0,0,0,0.2);
+}
+
+#topMenu div{
+  padding:12px 15px;
+  cursor:pointer;
+}
+
+#topMenu div:hover{
+  background:#f0f0f0;
+}
+
+/* Close menu when clicking outside */
+#header{
+  position:relative;
+}
 </style>
 </head>
-
 <body>
 
 <div id="sidebar">
@@ -166,7 +243,10 @@ button{
 <div id="main">
 
 <div id="header">
-  bybytalk
+  <div style="display:flex;align-items:center;gap:10px;">
+    bybytalk
+    <input type="date" id="searchDate" onchange="renderChat()">
+  </div>
   <div style="position:relative;">
     <button id="menuBtn" onclick="toggleMenu()">⋮</button>
     <div id="topMenu" style="display:none;position:absolute;right:0;top:35px;background:white;border:1px solid #ddd;border-radius:8px;">
@@ -184,13 +264,16 @@ button{
 
 <div id="chat">
   <div id="messages"></div>
-
+  
+  <!-- SCROLL TO BOTTOM BUTTON -->
+  <div id="scrollBtn" onclick="scrollToBottom()">⬇️ New Messages</div>
+  
   <!-- REPLY PREVIEW -->
   <div id="replyPreview">
     <span id="replyText"></span>
     <button onclick="cancelReply()" style="float:right;">❌</button>
   </div>
-
+  
   <div id="inputArea">
     <input id="msg" placeholder="Type message">
     <button onclick="sendMsg()">Send</button>
@@ -198,7 +281,6 @@ button{
 </div>
 
 </div>
-<!-- SEMUA CODE KAMU SAMA, SCROLL KE BAGIAN JS -->
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
@@ -218,223 +300,294 @@ const menuBtnEl = document.getElementById("menuBtn");
 const messagesEl = document.getElementById("messages");
 const starList = document.getElementById("starList");
 const msgInput = document.getElementById("msg");
+const scrollBtn = document.getElementById("scrollBtn");
+const topMenu = document.getElementById("topMenu");
 
-let stars = JSON.parse(localStorage.getItem("stars")||"[]");
+let stars = JSON.parse(localStorage.getItem("stars") || "[]");
 let replyTarget = null;
+let chatDataCache = {};
 
-/* ENTER SEND */
-msgInput.addEventListener("keypress",(e)=>{
-  if(e.key==="Enter") sendMsg();
+msgInput.addEventListener("keypress", (e) => {
+  if(e.key === "Enter") sendMsg();
 });
 
-/* LOGIN */
-window.login = async ()=>{
+// Close menu when clicking outside
+document.addEventListener("click", (e) => {
+  if(!menuBtnEl.contains(e.target) && !topMenu.contains(e.target)){
+    topMenu.style.display = "none";
+  }
+});
+
+// SCROLL EVENT - Show/hide scroll button
+messagesEl.addEventListener("scroll", () => {
+  const { scrollTop, scrollHeight, clientHeight } = messagesEl;
+  if(scrollHeight - scrollTop - clientHeight > 100){
+    scrollBtn.style.display = "block";
+  }else{
+    scrollBtn.style.display = "none";
+  }
+});
+
+window.scrollToBottom = () => {
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  scrollBtn.style.display = "none";
+};
+
+// GET DAY LABEL
+function getDayLabel(timestamp){
+  const msgDate = new Date(timestamp);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  
+  const msgDay = msgDate.toDateString();
+  const todayDay = today.toDateString();
+  const yesterdayDay = yesterday.toDateString();
+  
+  if(msgDay === todayDay) return "Today";
+  if(msgDay === yesterdayDay) return "Yesterday";
+  
+  const diffDays = Math.floor((today - msgDate) / (1000*60*60*24));
+  if(diffDays < 7){
+    return msgDate.toLocaleDateString([], {weekday: 'long'});
+  }
+  
+  return msgDate.toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'});
+}
+
+window.login = async () => {
   const u = username.value.trim().toLowerCase();
   const p = password.value.trim();
 
-  const snap = await get(ref(db,"users"));
+  const snap = await get(ref(db, "users"));
   if(!snap.exists()) return alert("users kosong");
 
-  let ok=false;
+  let ok = false;
   const data = snap.val();
-
   for(const k in data){
-    const user=data[k];
-    if(typeof user==="object"){
-      if(user.username?.toLowerCase()===u && user.password===p) ok=true;
+    const user = data[k];
+    if(typeof user === "object"){
+      if(user.username?.toLowerCase() === u && user.password === p) ok = true;
     }else{
-      if(k.toLowerCase()===u && user===p) ok=true;
+      if(k.toLowerCase() === u && user === p) ok = true;
     }
   }
 
   if(ok){
-    localStorage.setItem("user",u);
-    loginEl.style.display="none";
-    chatEl.style.display="flex";
-    sidebarEl.style.display="block";
-    menuBtnEl.style.display="inline-block";
+    localStorage.setItem("user", u);
+    loginEl.style.display = "none";
+    chatEl.style.display = "flex";
+    sidebarEl.style.display = "block";
+    menuBtnEl.style.display = "inline-block";
     load();
-
-    updateStar(); // 🔥 TAMBAHAN
+    updateStar();
   }else alert("Wrong login");
 };
 
-/* SEND */
-window.sendMsg = ()=>{
+window.sendMsg = () => {
   const text = msgInput.value;
   if(!text) return;
 
-  push(ref(db,"chatroom"),{
-    name:localStorage.getItem("user"),
-    message:text,
+  push(ref(db, "chatroom"), {
+    name: localStorage.getItem("user"),
+    message: text,
     reply: replyTarget || null,
-    time:Date.now()
+    time: Date.now()
   });
 
-  msgInput.value="";
+  msgInput.value = "";
   cancelReply();
+  scrollToBottom();
 };
 
-/* LOAD */
 function load(){
-  onValue(ref(db,"chatroom"),snap=>{
-    const isBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 5;
-
-    messagesEl.innerHTML="";
-    const me = localStorage.getItem("user");
-
-    Object.entries(snap.val()||{}).forEach(([id,m])=>{
-      const row=document.createElement("div");
-      row.className="row "+(m.name===me?"me":"other");
-
-      const bubble=document.createElement("div");
-      bubble.className="msg";
-
-      const menu=document.createElement("div");
-      menu.className="menu";
-      menu.innerText="⋮";
-
-      const drop=document.createElement("div");
-      drop.className="dropdown";
-
-      if(m.name===me){
-        drop.innerHTML=`
-          <div onclick="replyMsg('${m.message}')">↩ Reply</div>
-          <div onclick="star('${id}','${m.message}')">⭐ Star</div>
-          <div onclick="editMsg('${id}','${m.message}',${m.time})">✏️ Edit</div>
-          <div onclick="del('${id}')">🗑 Delete</div>
-        `;
-      }else{
-        drop.innerHTML=`
-        <div onclick="replyMsg('${m.message}')">↩ Reply</div>
-        <div onclick="star('${id}','${m.message}')">⭐ Star</div>
-        `;
-      }
-
-      menu.onclick=()=> drop.style.display = drop.style.display==="block"?"none":"block";
-
-      bubble.append(menu,drop);
-
-      if(m.reply){
-        const r=document.createElement("div");
-        r.className="replyBox";
-        r.innerHTML = "<b>Reply:</b> " + m.reply;
-        bubble.appendChild(r);
-      }
-
-      if(m.name!==me){
-        const n=document.createElement("div");
-        n.className="name";
-        n.innerText=m.name;
-        bubble.appendChild(n);
-      }
-
-      const text=document.createElement("div");
-      text.innerText=m.message;
-      bubble.appendChild(text);
-
-      row.appendChild(bubble);
-      messagesEl.appendChild(row);
-    });
-
-    if(isBottom){
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-
-    updateStar();
+  onValue(ref(db, "chatroom"), snap => {
+    chatDataCache = snap.val() || {};
+    renderChat();
   });
 }
 
-/* REPLY */
-window.replyMsg = (text)=>{
+function renderChat(){
+  const isBottom = messagesEl.scrollTop + messagesEl.clientHeight >= messagesEl.scrollHeight - 5;
+  messagesEl.innerHTML = "";
+  const me = localStorage.getItem("user");
+  const dateFilter = document.getElementById("searchDate").value;
+
+  let lastDay = "";
+
+  Object.entries(chatDataCache).forEach(([id, m]) => {
+    if(dateFilter){
+      const msgDate = new Date(m.time).toISOString().split('T')[0];
+      if(msgDate !== dateFilter) return;
+    }
+
+    const dayLabel = getDayLabel(m.time);
+    if(dayLabel !== lastDay){
+      const stamp = document.createElement("div");
+      stamp.className = "dayStamp";
+      stamp.innerText = dayLabel;
+      messagesEl.appendChild(stamp);
+      lastDay = dayLabel;
+    }
+
+    const row = document.createElement("div");
+    row.className = "row " + (m.name === me ? "me" : "other");
+
+    const bubble = document.createElement("div");
+    bubble.className = "msg";
+
+    const menu = document.createElement("div");
+    menu.className = "menu";
+    menu.innerText = "⋮";
+
+    const drop = document.createElement("div");
+    drop.className = "dropdown";
+
+    if(m.name === me){
+      drop.innerHTML = `
+        <div onclick="replyMsg('${m.message}')">↩ Reply</div>
+        <div onclick="star('${id}', '${m.message}')">⭐ Star</div>
+        <div onclick="editMsg('${id}', '${m.message}', ${m.time})">✏️ Edit</div>
+        <div onclick="del('${id}')">🗑 Delete</div>
+      `;
+    }else{
+      drop.innerHTML = `
+        <div onclick="replyMsg('${m.message}')">↩ Reply</div>
+        <div onclick="star('${id}', '${m.message}')">⭐ Star</div>
+      `;
+    }
+
+    menu.onclick = (e) => {
+      e.stopPropagation();
+      closeAllDropdowns();
+      drop.style.display = drop.style.display === "block" ? "none" : "block";
+    };
+
+    bubble.append(menu, drop);
+
+    if(m.reply){
+      const r = document.createElement("div");
+      r.className = "replyBox";
+      r.innerHTML = "<b>Reply:</b> " + m.reply;
+      bubble.appendChild(r);
+    }
+
+    if(m.name !== me){
+      const n = document.createElement("div");
+      n.className = "name";
+      n.innerText = m.name;
+      bubble.appendChild(n);
+    }
+
+    const text = document.createElement("div");
+    text.innerText = m.message;
+    bubble.appendChild(text);
+
+    const timeDiv = document.createElement("div");
+    timeDiv.className = "timestamp";
+    timeDiv.innerText = new Date(m.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    bubble.appendChild(timeDiv);
+
+    row.appendChild(bubble);
+    messagesEl.appendChild(row);
+  });
+
+  // Close dropdowns when clicking on messages area
+  messagesEl.addEventListener("click", closeAllDropdowns);
+
+  if(!dateFilter && isBottom){
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+}
+
+function closeAllDropdowns(){
+  document.querySelectorAll(".dropdown").forEach(d => d.style.display = "none");
+  topMenu.style.display = "none";
+}
+
+window.replyMsg = (text) => {
   replyTarget = text;
   document.getElementById("replyPreview").style.display = "block";
   document.getElementById("replyText").innerText = text;
 };
 
-window.cancelReply = ()=>{
+window.cancelReply = () => {
   replyTarget = null;
   document.getElementById("replyPreview").style.display = "none";
 };
 
-/* STAR */
-window.star=(id,text)=>{
-  if(!stars.find(s=>s.id===id)){
-    stars.push({id,text});
-    localStorage.setItem("stars",JSON.stringify(stars));
+window.star = (id, text) => {
+  if(!stars.find(s => s.id === id)){
+    stars.push({id, text});
+    localStorage.setItem("stars", JSON.stringify(stars));
     updateStar();
   }
 };
 
-/* 🔥 FIX UTAMA ADA DI SINI */
 function updateStar(){
   if(!starList) return;
+  stars = JSON.parse(localStorage.getItem("stars") || "[]");
+  starList.innerHTML = "";
+  stars.forEach((s, i) => {
+    const d = document.createElement("div");
+    d.style.display = "flex";
+    d.style.justifyContent = "space-between";
+    d.style.marginBottom = "5px";
 
-  stars = JSON.parse(localStorage.getItem("stars")||"[]"); // 🔥 TAMBAHAN
+    const t = document.createElement("span");
+    t.innerText = s.text;
 
-  starList.innerHTML="";
-  stars.forEach((s,i)=>{
-    const d=document.createElement("div");
-    d.style.display="flex";
-    d.style.justifyContent="space-between";
-
-    const t=document.createElement("span");
-    t.innerText=s.text;
-
-    const b=document.createElement("button");
-    b.innerText="❌";
-    b.onclick=()=>{
-      stars.splice(i,1);
-      localStorage.setItem("stars",JSON.stringify(stars));
+    const b = document.createElement("button");
+    b.innerText = "❌";
+    b.onclick = () => {
+      stars.splice(i, 1);
+      localStorage.setItem("stars", JSON.stringify(stars));
       updateStar();
     };
 
-    d.append(t,b);
+    d.append(t, b);
     starList.appendChild(d);
   });
 }
 
-/* DELETE */
-window.del=async(id)=>{
-  const snap=await get(ref(db,"chatroom/"+id));
-  if(snap.val()?.name!==localStorage.getItem("user")){
+window.del = async (id) => {
+  const snap = await get(ref(db, "chatroom/" + id));
+  if(snap.val()?.name !== localStorage.getItem("user")){
     alert("Tidak bisa hapus pesan orang lain");
     return;
   }
-  remove(ref(db,"chatroom/"+id));
+  remove(ref(db, "chatroom/" + id));
 };
 
-/* EDIT */
-window.editMsg=(id,old,time)=>{
-  if(Date.now()-time>15*60*1000) return alert("Expired");
-  const n=prompt("Edit:",old);
+window.editMsg = (id, old, time) => {
+  if(Date.now() - time > 15*60*1000) return alert("Expired");
+  const n = prompt("Edit:", old);
   if(!n) return;
-  update(ref(db,"chatroom/"+id),{message:n});
+  update(ref(db, "chatroom/" + id), {message: n});
 };
 
-/* MENU */
-window.toggleMenu=()=>{
-  topMenu.style.display = topMenu.style.display==="block"?"none":"block";
+window.toggleMenu = () => {
+  topMenu.style.display = topMenu.style.display === "block" ? "none" : "block";
 };
-window.clearChat=()=> remove(ref(db,"chatroom"));
-window.logout=()=>{
+
+window.clearChat = () => remove(ref(db, "chatroom"));
+
+window.logout = () => {
   localStorage.removeItem("user");
   location.reload();
 };
 
-/* AUTO LOGIN */
-window.addEventListener("DOMContentLoaded", ()=>{
+window.addEventListener("DOMContentLoaded", () => {
   if(localStorage.getItem("user")){
-    loginEl.style.display="none";
-    chatEl.style.display="flex";
-    sidebarEl.style.display="block";
-    menuBtnEl.style.display="inline-block";
+    loginEl.style.display = "none";
+    chatEl.style.display = "flex";
+    sidebarEl.style.display = "block";
+    menuBtnEl.style.display = "inline-block";
     load();
-
-    updateStar(); // 🔥 TAMBAHAN
+    updateStar();
   }else{
-    sidebarEl.style.display="none";
-    menuBtnEl.style.display="none";
+    sidebarEl.style.display = "none";
+    menuBtnEl.style.display = "none";
   }
 });
 </script>
